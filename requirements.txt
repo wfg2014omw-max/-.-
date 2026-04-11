@@ -2,3 +2,5 @@ python-telegram-bot
 selenium
 webdriver-manager
 requests
+selenium-stealth
+fake-useragent
