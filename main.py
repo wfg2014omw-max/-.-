@@ -1,94 +1,80 @@
-import os
 import time
 import random
-import string
-import logging
-import asyncio
+import re
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium_stealth import stealth
+from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
+from faker import Faker
 
-# --- إعدادات النظام العملاق ---
-TOKEN = "8611483217:AAFRdww2hpvUAez32Wx4XubeXCMS3q8Pi44"
-CYBER_API = "tk_0bf2b34656f5933b0015c0a4bbe026811a754c32074e4591afec8b27a293e253"
+fake = Faker()
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("Sabir_Omega")
+# --- وظائف الإيميل المؤقت ---
+def get_temp_email():
+    """توليد إيميل مؤقت باستخدام 1secmail"""
+    username = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz1234567890', k=10))
+    domain = "1secmail.com"
+    return f"{username}@{domain}", username, domain
 
-class SabirAutomator:
-    def __init__(self):
-        self.options = Options()
-        self.setup_browser()
+def wait_for_otp(username, domain):
+    """انتظار وصول كود التفعيل من إنستجرام"""
+    print(f"Checking inbox for {username}@{domain}...")
+    api_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
+    
+    for _ in range(24): # محاولة لمدة دقيقتين (كل 5 ثواني محاولة)
+        response = requests.get(api_url).json()
+        if response:
+            msg_id = response[0]['id']
+            msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
+            msg_content = requests.get(msg_url).json()
+            # البحث عن 6 أرقام في نص الرسالة
+            code = re.findall(r'\b\d{6}\b', msg_content['body'])
+            if code:
+                print(f"Found OTP: {code[0]}")
+                return code[0]
+        time.sleep(5)
+    return None
 
-    def setup_browser(self):
-        self.options.add_argument('--headless=new')
-        self.options.add_argument('--no-sandbox')
-        self.options.add_argument('--disable-dev-shm-usage')
-        self.options.add_argument('--disable-gpu')
-        self.options.add_argument('--window-size=1920,1080')
-        # مسارات Railway الافتراضية للكروم (لحل مشكلة 127)
-        self.options.binary_location = "/usr/bin/chromium"
+# --- السكربت الأساسي ---
+def run_bot():
+    email, user, dom = get_temp_email()
+    full_name = fake.name()
+    insta_username = user + str(random.randint(10, 99))
+    password = "SafePassword123!" # يفضل تخليها متغيرة
 
-    def get_driver(self):
-        service = Service("/usr/bin/chromedriver")
-        driver = webdriver.Chrome(service=service, options=self.options)
-        # تكتكة التخفي
-        stealth(driver,
-            languages=["en-US", "en"],
-            vendor="Google Inc.",
-            platform="Win32",
-            webgl_vendor="Intel Inc.",
-            renderer="Intel Iris OpenGL Engine",
-            fix_hairline=True,
+    with sync_playwright() as p:
+        # ملاحظة: في Railway لازم headless=True
+        browser = p.chromium.launch(headless=True) 
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
         )
-        return driver
+        page = context.new_page()
+        stealth_sync(page)
 
-    async def run_mission(self, chat_id, context):
-        driver = None
-        try:
-            await context.bot.send_message(chat_id, "🚀 **الغول انطلق.. جاري اختراق السستم!**")
-            driver = await asyncio.to_thread(self.get_driver)
-            
-            # توليد بيانات احترافية
-            email = f"{''.join(random.choices(string.ascii_lowercase, k=10))}@Sabir.cybertemp.xyz"
-            user = "sabir_" + "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-            
-            # تنفيذ المهمة (مثال إنستجرام)
-            driver.get("https://www.instagram.com/accounts/emailsignup/")
-            await asyncio.sleep(5)
-            
-            # لقطة شاشة للنجاح
-            snap = f"res_{chat_id}.png"
-            driver.save_screenshot(snap)
-            with open(snap, 'rb') as f:
-                await context.bot.send_photo(chat_id, f, caption=f"✅ **تمت العملية!**\n📧 `{email}`\n👤 `{user}`")
-            os.remove(snap)
+        print(f"Starting registration for: {email}")
+        page.goto("https://www.instagram.com/accounts/emailsignup/")
+        
+        # ملء البيانات مع تأخيرات عشوائية (Human-like behavior)
+        page.wait_for_selector('input[name="emailOrPhone"]')
+        page.type('input[name="emailOrPhone"]', email, delay=random.randint(100, 200))
+        page.type('input[name="fullName"]', full_name, delay=random.randint(100, 200))
+        page.type('input[name="username"]', insta_username, delay=random.randint(100, 200))
+        page.type('input[name="password"]', password, delay=random.randint(100, 200))
+        
+        # الضغط على زر التسجيل
+        page.click('button[type="submit"]')
+        
+        # هنا المفروض تختار تاريخ الميلاد (خطوة إضافية)
+        # وبعدها هيطلب كود الـ OTP
+        
+        otp_code = wait_for_otp(user, dom)
+        if otp_code:
+            print(f"Entering OTP: {otp_code}")
+            # كود ملء خانة الـ OTP هنا
+        else:
+            print("Failed to get OTP.")
 
-        except Exception as e:
-            await context.bot.send_message(chat_id, f"❌ **عطل فني في السيرفر:**\n`{str(e)[:200]}`")
-        finally:
-            if driver: driver.quit()
-
-# --- واجهة التلجرام ---
-async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    kb = [[InlineKeyboardButton("🔥 إطلاق المحرك OMEGA", callback_data="go")]]
-    await u.message.reply_text("😎 **Sabir Sniper V1000 - الـعـظـمـة**", reply_markup=InlineKeyboardMarkup(kb))
-
-async def handle_click(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    q = u.callback_query
-    await q.answer()
-    if q.data == "go":
-        bot_logic = SabirAutomator()
-        asyncio.create_task(bot_logic.run_mission(q.message.chat_id, c))
+        browser.close()
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_click))
-    print("📡 البوت شغال على Railway.. مستني الأوامر")
-    app.run_polling()
+    run_bot()
     
