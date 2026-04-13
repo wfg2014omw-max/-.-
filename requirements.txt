@@ -1,6 +1,4 @@
-python-telegram-bot
-selenium
-webdriver-manager
+playwright
+playwright-stealth
 requests
-selenium-stealth
-fake-useragent
+faker
