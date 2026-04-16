@@ -2,3 +2,6 @@ playwright
 playwright-stealth
 requests
 faker
+pyTelegramBotAPI
+pymongo
+dnspython
