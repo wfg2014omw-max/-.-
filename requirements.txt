@@ -5,3 +5,4 @@ faker
 pyTelegramBotAPI
 pymongo
 dnspython
+pip install selenium webdriver-manager
